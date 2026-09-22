@@ -100,7 +100,7 @@ else:
 
 # --- Analysis Controls ---
 st.sidebar.markdown(f"### {'5' if use_brace else '4'}. Pushover Controls")
-target_disp = st.sidebar.slider("Target Displacement (mm)", 20.0, 150.0, 90.0, 5.0)
+target_disp = st.sidebar.slider("Target Displacement (mm)", 20.0, 250.0, 90.0, 5.0)
 dU = st.sidebar.slider("Step size dU (mm)", 0.1, 1.0, 0.5, 0.1)
 
 def run_frame_pushover(
