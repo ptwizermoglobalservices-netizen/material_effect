@@ -39,8 +39,16 @@ if "current_results" not in st.session_state:
 
 st.sidebar.title("🎛️ Model Parameters")
 
+# --- Structural Topology (Toggle Diagonal Brace) ---
+st.sidebar.markdown("### 0. Structural Topology")
+use_brace = st.sidebar.toggle(
+    "Include Diagonal Member",
+    value=True,
+    help="Toggle ON to add the diagonal truss element 4 (Infilled/Braced Frame), or OFF for a Bare RC Frame."
+)
+
 # --- Gravity Beam Load w ---
-st.sidebar.markdown("### 0. Gravity Beam Load ($w$)")
+st.sidebar.markdown("### 1. Gravity Beam Load ($w$)")
 w_load = st.sidebar.slider(
     "Beam Uniform Load w (kN/m)",
     min_value=-60.0,
@@ -51,7 +59,7 @@ w_load = st.sidebar.slider(
 )
 
 # --- Concrete02 Parameters ---
-st.sidebar.markdown("### 1. Concrete (`Concrete02`)")
+st.sidebar.markdown("### 2. Concrete (`Concrete02`)")
 c_col1, c_col2 = st.sidebar.columns(2)
 with c_col1:
     fck = st.slider("fck (MPa)", 15.0, 70.0, 40.0, 2.5, help="Compressive peak strength")
@@ -64,7 +72,7 @@ with c_col2:
     ft = st.slider("ft (MPa)", 0.0, 4.5, 0.0, 0.25, help="Tensile strength")
 
 # --- Steel02 Parameters ---
-st.sidebar.markdown("### 2. Longitudinal Rebar (`Steel02`)")
+st.sidebar.markdown("### 3. Longitudinal Rebar (`Steel02`)")
 s_col1, s_col2 = st.sidebar.columns(2)
 with s_col1:
     fy = st.slider("fy (MPa)", 300.0, 650.0, 550.0, 10.0, help="Yield stress")
@@ -76,24 +84,27 @@ with s_col2:
     cR2 = st.slider("cR2", 0.05, 0.35, 0.15, 0.025, help="Curvature transition degradation 2")
 
 # --- Hysteretic Brace Parameters ---
-st.sidebar.markdown("### 3. Diagonal Brace (`Hysteretic`)")
-h_col1, h_col2 = st.sidebar.columns(2)
-with h_col1:
-    px = st.slider("px (Pinch X)", 0.1, 1.0, 0.6, 0.05, help="Pinching limit along displacement axis")
-    damage1 = st.slider("damage1", 0.0, 0.5, 0.0, 0.05, help="Ductility-based damage")
-    beta = st.slider("beta", 0.0, 0.5, 0.0, 0.05, help="Degradation based on energy")
-with h_col2:
-    py = st.slider("py (Pinch Y)", 0.1, 1.0, 0.4, 0.05, help="Pinching limit along force axis")
-    damage2 = st.slider("damage2", 0.0, 0.5, 0.0, 0.05, help="Energy-based damage")
-    A_brace = st.slider("Area (mm²)", 200.0, 2500.0, 1000.0, 100.0)
+if use_brace:
+    st.sidebar.markdown("### 4. Diagonal Brace (`Hysteretic`)")
+    h_col1, h_col2 = st.sidebar.columns(2)
+    with h_col1:
+        px = st.slider("px (Pinch X)", 0.1, 1.0, 0.6, 0.05, help="Pinching limit along displacement axis")
+        damage1 = st.slider("damage1", 0.0, 0.5, 0.0, 0.05, help="Ductility-based damage")
+        beta = st.slider("beta", 0.0, 0.5, 0.0, 0.05, help="Degradation based on energy")
+    with h_col2:
+        py = st.slider("py (Pinch Y)", 0.1, 1.0, 0.4, 0.05, help="Pinching limit along force axis")
+        damage2 = st.slider("damage2", 0.0, 0.5, 0.0, 0.05, help="Energy-based damage")
+        A_brace = st.slider("Area (mm²)", 200.0, 2500.0, 1000.0, 100.0)
+else:
+    px, py, damage1, damage2, beta, A_brace = 0.6, 0.4, 0.0, 0.0, 0.0, 1000.0
 
 # --- Analysis Controls ---
-st.sidebar.markdown("### 4. Pushover Controls")
+st.sidebar.markdown(f"### {'5' if use_brace else '4'}. Pushover Controls")
 target_disp = st.sidebar.slider("Target Displacement (mm)", 20.0, 150.0, 90.0, 5.0)
 dU = st.sidebar.slider("Step size dU (mm)", 0.1, 1.0, 0.5, 0.1)
 
 def run_frame_pushover(
-    w_val, fck_v, epsc0_v, fcu_v, epscu_v, Lam_v, ft_v, Ets_v,
+    include_diag, w_val, fck_v, epsc0_v, fcu_v, epscu_v, Lam_v, ft_v, Ets_v,
     fy_v, E0_v, b_v, R0_v, cR1_v, cR2_v,
     px_v, py_v, dmg1_v, dmg2_v, beta_v, A_br_v,
     t_disp, du_step
@@ -149,16 +160,17 @@ def run_frame_pushover(
     ops.layer("straight", 3, 3, As_beam, -y_beam + cover, -z_beam + cover, -y_beam + cover, z_beam - cover)
     ops.layer("straight", 3, 3, As_beam,  y_beam - cover, -z_beam + cover,  y_beam - cover,  z_beam - cover)
 
-    # 5. Hysteretic Brace Material & Truss Element
-    fy_b = 200.0
-    e1, e2, e3 = 0.002, 0.005, 0.010
-    ops.uniaxialMaterial(
-        "Hysteretic", 4,
-        fy_b, e1, fy_b * 1.1, e2, fy_b * 0.2, e3,
-        -fy_b, -e1, -fy_b * 1.1, -e2, -fy_b * 0.2, -e3,
-        px_v, py_v, dmg1_v, dmg2_v, beta_v
-    )
-    ops.element("corotTruss", 4, 2, 4, A_br_v, 4)
+    # 5. Diagonal Brace Material & Element (conditionally added)
+    if include_diag:
+        fy_b = 200.0
+        e1, e2, e3 = 0.002, 0.005, 0.010
+        ops.uniaxialMaterial(
+            "Hysteretic", 4,
+            fy_b, e1, fy_b * 1.1, e2, fy_b * 0.2, e3,
+            -fy_b, -e1, -fy_b * 1.1, -e2, -fy_b * 0.2, -e3,
+            px_v, py_v, dmg1_v, dmg2_v, beta_v
+        )
+        ops.element("corotTruss", 4, 2, 4, A_br_v, 4)
 
     # 6. Nonlinear Frame Elements
     ops.geomTransf("Linear", 1)
@@ -169,8 +181,8 @@ def run_frame_pushover(
     # 7. Gravity Analysis with parameter w
     ops.timeSeries("Linear", 1)
     ops.pattern("Plain", 1, 1)
-    # Apply user defined uniform beam gravity load (N/mm = kN/m)
-    ops.eleLoad("-ele", 2, "-type", "beamUniform", w_val)
+    if abs(w_val) > 1e-4:
+        ops.eleLoad("-ele", 2, "-type", "beamUniform", w_val)
 
     ops.system("BandGeneral")
     ops.constraints("Transformation")
@@ -226,8 +238,9 @@ def run_frame_pushover(
         roof_disp = ops.nodeDisp(2, 1)
         base_shear = -(ops.nodeReaction(1, 1) + ops.nodeReaction(4, 1)) / 1e3
         
-        # CorotTruss axial force (N -> kN)
-        brace_axial = -(ops.eleResponse(4, "axialForce")[0] / 1e3)
+        brace_axial = 0.0
+        if include_diag:
+            brace_axial = -(ops.eleResponse(4, "axialForce")[0] / 1e3)
 
         D_hist.append(roof_disp)
         V_hist.append(base_shear)
@@ -322,8 +335,11 @@ tab_pushover, tab_playground, tab_theory = st.tabs([
 ])
 
 with tab_pushover:
-    st.subheader("Global Pushover & Diagonal Demand")
-    st.caption("Investigate how beam gravity load $w$, reinforcement, and bracing stiffness interact to govern the global capacity.")
+    st.subheader("Global Pushover & Structural Demand")
+    st.markdown(
+        f"**Active Configuration:** `{'RC Frame + Diagonal Truss Member' if use_brace else 'Bare RC Frame (Diagonal Member Removed)'}` | "
+        f"**Gravity Beam Load:** `{w_load:.1f} kN/m`"
+    )
 
     b_col1, b_col2, b_col3 = st.columns([1.5, 1.5, 3])
     with b_col1:
@@ -344,7 +360,7 @@ with tab_pushover:
     if run_sim:
         with st.spinner("Computing nonlinear static equilibrium across load steps..."):
             D, V, N, status = run_frame_pushover(
-                w_load, fck, epsc0, fcu, epscu, Lambda, ft, Ets,
+                use_brace, w_load, fck, epsc0, fcu, epscu, Lambda, ft, Ets,
                 fy, E0, b_steel, R0, cR1, cR2,
                 px, py, damage1, damage2, beta, A_brace,
                 target_disp, dU
@@ -354,34 +370,43 @@ with tab_pushover:
         else:
             st.session_state.current_results = {
                 "D": D, "V": V, "N": N, "w": w_load,
-                "fck": fck, "fy": fy, "A_brace": A_brace
+                "has_brace": use_brace, "fck": fck, "fy": fy, "A_brace": A_brace
             }
 
     if st.session_state.current_results is not None:
         curr = st.session_state.current_results
         base = st.session_state.baseline_results
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+        has_any_brace = curr["has_brace"] or (base is not None and base["has_brace"])
+
+        if has_any_brace:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+        else:
+            fig, ax1 = plt.subplots(1, 1, figsize=(8, 5))
 
         # 1. Base Shear vs Roof Disp
-        ax1.plot(curr["D"], curr["V"], color="#1d4ed8", lw=2.4, label=f"Current (w={curr['w']} kN/m)")
+        curr_label = f"Current ({'With Brace' if curr['has_brace'] else 'Bare Frame'}, w={curr['w']} kN/m)"
+        ax1.plot(curr["D"], curr["V"], color="#1d4ed8", lw=2.4, label=curr_label)
         if base is not None:
-            ax1.plot(base["D"], base["V"], color="#64748b", lw=1.8, linestyle="--", label=f"Baseline (w={base['w']} kN/m)")
+            base_label = f"Baseline ({'With Brace' if base['has_brace'] else 'Bare Frame'}, w={base['w']} kN/m)"
+            ax1.plot(base["D"], base["V"], color="#64748b", lw=1.8, linestyle="--", label=base_label)
         ax1.set_title("Global Pushover Curve (Base Shear vs Roof Drift)", fontsize=11, fontweight="bold")
         ax1.set_xlabel("Roof Lateral Displacement (mm)")
         ax1.set_ylabel("Total Base Shear (kN)")
         ax1.grid(True, linestyle="--", alpha=0.5)
         ax1.legend(loc="lower right")
 
-        # 2. Brace Axial Force vs Roof Disp
-        ax2.plot(curr["D"], curr["N"], color="#dc2626", lw=2.2, label="Current Brace Axial Force")
-        if base is not None:
-            ax2.plot(base["D"], base["N"], color="#94a3b8", lw=1.8, linestyle="--", label="Baseline Brace Force")
-        ax2.set_title("Diagonal Brace Axial Force Demand", fontsize=11, fontweight="bold")
-        ax2.set_xlabel("Roof Lateral Displacement (mm)")
-        ax2.set_ylabel("Brace Axial Force (kN, Compression < 0)")
-        ax2.grid(True, linestyle="--", alpha=0.5)
-        ax2.legend(loc="best")
+        # 2. Brace Axial Force vs Roof Disp (if applicable)
+        if has_any_brace:
+            if curr["has_brace"]:
+                ax2.plot(curr["D"], curr["N"], color="#dc2626", lw=2.2, label="Current Brace Force")
+            if base is not None and base["has_brace"]:
+                ax2.plot(base["D"], base["N"], color="#94a3b8", lw=1.8, linestyle="--", label="Baseline Brace Force")
+            ax2.set_title("Diagonal Brace Axial Force Demand", fontsize=11, fontweight="bold")
+            ax2.set_xlabel("Roof Lateral Displacement (mm)")
+            ax2.set_ylabel("Brace Axial Force (kN, Compression < 0)")
+            ax2.grid(True, linestyle="--", alpha=0.5)
+            ax2.legend(loc="best")
 
         plt.tight_layout()
         st.pyplot(fig)
@@ -390,14 +415,17 @@ with tab_pushover:
         m1, m2, m3, m4 = st.columns(4)
         peak_V = max(curr["V"])
         disp_peak = curr["D"][np.argmax(curr["V"])]
-        max_brace_force = min(curr["N"])  # Compression peak
 
         with m1:
             st.metric("Peak Base Shear", f"{peak_V:.1f} kN", delta=f"{peak_V - max(base['V']):.1f} kN" if base else None)
         with m2:
             st.metric("Drift at Peak Shear", f"{disp_peak:.1f} mm")
         with m3:
-            st.metric("Peak Brace Compression", f"{max_brace_force:.1f} kN")
+            if curr["has_brace"]:
+                max_brace_force = min(curr["N"])
+                st.metric("Peak Brace Compression", f"{max_brace_force:.1f} kN")
+            else:
+                st.metric("Diagonal Member", "Excluded (Bare Frame)")
         with m4:
             st.metric("Gravity Beam Load w", f"{curr['w']} kN/m")
 
@@ -408,9 +436,10 @@ with tab_playground:
     actively govern hysteretic damping, pinch shapes, and stiffness decay.
     """)
 
+    available_mats = ["Hysteretic Brace", "Steel02 Rebar", "Concrete02"] if use_brace else ["Steel02 Rebar", "Concrete02"]
     sel_mat = st.radio(
         "Select Material Model to Test Cyclically:",
-        ["Hysteretic Brace", "Steel02 Rebar", "Concrete02"],
+        available_mats,
         horizontal=True
     )
 
@@ -449,9 +478,10 @@ with tab_theory:
     st.markdown("""
 | Model | Parameter | Physical Meaning | Effect on Monotonic Pushover | Effect on Cyclic Response |
 | :--- | :--- | :--- | :--- | :--- |
+| **Topology** | **Diagonal Member** | Element 4 (`corotTruss`) | **Drastic**: Increases initial stiffness and peak shear capacity by several multiples. When removed, behavior transitions to flexible bare frame flexure. | Adds pinched hysteresis and shear-dominated energy dissipation. |
 | **Gravity** | **`w`** | Uniform vertical load on beam | **High**: Pre-compresses columns, creates initial sagging beam moment, accelerates column plastic hinging via P-M interaction and reduces lateral capacity. | Pre-loads beam plastic hinges, causing asymmetric cyclic loops. |
 | **`Concrete02`**| `fck` | Peak compressive strength | Scales column axial and flexural capacity directly. | Expands bounding compression envelope. |
-| | `epsc0` | Strain at peak strength | Alters initial flexural stiffness ($E_c \approx 2f_{ck}/\epsilon_0$). | Governs strain at start of compression softening. |
+| | `epsc0` | Strain at peak strength | Alters initial flexural stiffness ($E_c \\approx 2f_{ck}/\\epsilon_0$). | Governs strain at start of compression softening. |
 | | `fcu` | Residual compressive strength | Sustains residual post-peak capacity of columns. | Sets minimum residual loop size at large drifts. |
 | | `epscu` | Ultimate crushing strain | Controls ductility before abrupt column strength loss. | Dictates core concrete spalling limit. |
 | | `Lambda` | Unloading stiffness ratio | **Zero effect** (only active during unload). | Prevents numerical divergence during crack closing. |
