@@ -161,7 +161,7 @@ def run_pushover():
         ops.reactions()
         top_disp = ops.nodeDisp(2, 1)
         base_shear = -(ops.nodeReaction(1, 1) + ops.nodeReaction(4, 1)) / 1e3
-        brace_axial = -(ops.eleResponse(4, "axialForce")[0] / 1e3)
+        brace_axial = ops.eleResponse(4, "axialForce")[0] / 1e3
 
         D_hist.append(top_disp)
         V_hist.append(base_shear)
